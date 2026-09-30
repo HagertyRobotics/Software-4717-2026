@@ -34,6 +34,7 @@ import ftclib.sensor.FtcRobotBattery;
 import ftclib.vision.FtcLimelightVision;
 import teamcode.indicators.LEDIndicator;
 import teamcode.subsystems.DriveBase;
+import teamcode.subsystems.Pedro;
 import teamcode.vision.Vision;
 import trclib.motor.TrcMotor;
 import trclib.motor.TrcServo;
@@ -69,6 +70,7 @@ public class Robot
     public DriveBase robotDriveBase;
     public FtcRobotBase.RobotInfo robotInfo;
     public FtcRobotBase robotBase;
+    public Pedro pedroSubsystem;
     private static TrcPose2D endOfAutoRobotPose = null;
     // Sensors and indicators.
     public FtcRobotBattery battery;
@@ -104,6 +106,11 @@ public class Robot
         robotInfo = robotDriveBase.getRobotInfo();
         robotBase = robotDriveBase.getRobotBase();
 
+        // Create and initialize Pedro Pathing as an alternate drive/path-following engine (MecanumRobot only).
+        pedroSubsystem =
+            RobotParams.Preferences.usePedro && RobotParams.Preferences.robotType == DriveBase.RobotType.MecanumRobot?
+                new Pedro(this, opMode.hardwareMap): null;
+
         // Create and initialize sensors and indicators.
         battery = RobotParams.Preferences.useBatteryMonitor? new FtcRobotBattery(): null;
         ledIndicator = RobotParams.Preferences.useLED && robotInfo.indicatorNames != null?
@@ -113,7 +120,7 @@ public class Robot
         if (RobotParams.Preferences.useVision && robotInfo.camInfos != null && robotInfo.camInfos.length > 0)
         {
             vision = new Vision(this);
-            if (RobotParams.Preferences.visionRelocalizeEnabled && robotBase != null)
+            if (RobotParams.Preferences.visionRelocalizeEnabled && (robotBase != null || pedroSubsystem != null))
             {
                 trcVisionRelocalize = new TrcVisionRelocalize(100);
             }
@@ -193,6 +200,17 @@ public class Robot
             // Consume it so it's no longer valid for next run.
             endOfAutoRobotPose = null;
         }
+        else if (pedroSubsystem != null)
+        {
+            if (runMode == TrcRobot.RunMode.TELEOP_MODE && endOfAutoRobotPose != null)
+            {
+                // We had a previous autonomous run that saved the robot position at the end, use it.
+                pedroSubsystem.setStartPose(endOfAutoRobotPose);
+                globalTracer.traceInfo(moduleName, "Restore saved RobotPose=" + endOfAutoRobotPose);
+            }
+            // Consume it so it's no longer valid for next run.
+            endOfAutoRobotPose = null;
+        }
 
         TrcDigitalInput.setElapsedTimerEnabled(true);
         TrcMotor.setElapsedTimerEnabled(true);
@@ -224,6 +242,12 @@ public class Robot
             {
                 robotBase.gyro.setEnabled(false);
             }
+        }
+        else if (pedroSubsystem != null && runMode == TrcRobot.RunMode.AUTO_MODE)
+        {
+            // Save current robot location at the end of autonomous so subsequent teleop run can restore it.
+            endOfAutoRobotPose = pedroSubsystem.getCurrentPose();
+            globalTracer.traceInfo(moduleName, "Saved robot pose=" + endOfAutoRobotPose);
         }
         //
         // Disable vision.
@@ -335,7 +359,7 @@ public class Robot
     private boolean relocalizeRobot()
     {
         boolean seenAprilTag = false;
-        TrcPose2D robotPose = robotBase.driveBase.getFieldPosition();
+        TrcPose2D robotPose = pedroSubsystem != null? pedroSubsystem.getCurrentPose(): robotBase.driveBase.getFieldPosition();
         long currTimestampMilli = System.currentTimeMillis();
         trcVisionRelocalize.addTimedPose(currTimestampMilli, robotPose);
         // Assume we are using Limelight to detect AprilTag.
@@ -350,14 +374,34 @@ public class Robot
         if (aprilTagObj != null)
         {
             seenAprilTag = true;
-            TrcPose2D robotVel = robotBase.driveBase.getRobotVelocity();
-            TrcPose2D relocalizedPose =
-                Math.hypot(robotVel.x, robotVel.y) > 0.01 || Math.abs(robotVel.angle) > 1.0?
-                    trcVisionRelocalize.getRelocalizedPose(
-                        aprilTagObj.detectedObj.timestamp, aprilTagObj.detectedObj.robotPose, robotPose):
-                    aprilTagObj.detectedObj.robotPose;
+            // The classic drive base skips fusion and uses the raw AprilTag pose directly when nearly stationary
+            // (a pure optimization). Pedro Pathing doesn't expose a velocity accessor we can use for that check,
+            // so always fuse through TrcVisionRelocalize when Pedro is active -- fusion is still correct, just
+            // slightly more work, when the robot happens to be stationary.
+            TrcPose2D relocalizedPose;
+            if (pedroSubsystem != null)
+            {
+                relocalizedPose = trcVisionRelocalize.getRelocalizedPose(
+                    aprilTagObj.detectedObj.timestamp, aprilTagObj.detectedObj.robotPose, robotPose);
+            }
+            else
+            {
+                TrcPose2D robotVel = robotBase.driveBase.getRobotVelocity();
+                relocalizedPose =
+                    Math.hypot(robotVel.x, robotVel.y) > 0.01 || Math.abs(robotVel.angle) > 1.0?
+                        trcVisionRelocalize.getRelocalizedPose(
+                            aprilTagObj.detectedObj.timestamp, aprilTagObj.detectedObj.robotPose, robotPose):
+                        aprilTagObj.detectedObj.robotPose;
+            }
 
-            robotBase.driveBase.setFieldPosition(relocalizedPose);
+            if (pedroSubsystem != null)
+            {
+                pedroSubsystem.setStartPose(relocalizedPose);
+            }
+            else
+            {
+                robotBase.driveBase.setFieldPosition(relocalizedPose);
+            }
             globalTracer.traceDebug(
                 moduleName,
                 "VisionRelocalize: TimeMilli=%d, Relocalize %s->%s, VisionPose[%d](time=%d, pose=%s)",
@@ -408,7 +452,14 @@ public class Robot
             autoChoices.alliance, false,
             autoChoices.startPos == FtcAuto.AutoStartPos.Left?
                 RobotParams.Game.STARTPOSE_BLUE_LEFT: RobotParams.Game.STARTPOSE_BLUE_RIGHT);
+        if (pedroSubsystem != null)
+        {
+            pedroSubsystem.setStartPose(startPose);
+        }
+        else
+        {
             robotBase.driveBase.setFieldPosition(startPose);
+        }
     }   //setRobotStartPosition
 
     /**

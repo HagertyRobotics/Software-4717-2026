@@ -71,6 +71,9 @@ public class RobotParams
         public static final boolean showPidDrive                = false;
         public static final boolean showDriveBaseGraph          = false;
         public static final boolean tuneDriveBase               = false;
+        // Pedro Pathing (alternate drive/path-following engine, MecanumRobot only; mutually exclusive in
+        // practice with useDriveBase since both drive the same physical wheels).
+        public static final boolean usePedro                    = true;
         // Other Subsystems
         // Auto Tasks
     }   //class Preferences

@@ -35,6 +35,7 @@ import ftclib.driverio.FtcMenu;
 import ftclib.driverio.FtcValueMenu;
 import ftclib.robotcore.FtcOpMode;
 import teamcode.autocommands.CmdAuto;
+import teamcode.autocommands.CmdPedroPathDrive;
 import trclib.command.CmdPidDrive;
 import trclib.command.CmdPurePursuitDrive;
 import trclib.command.CmdTimedDrive;
@@ -71,6 +72,7 @@ public class FtcAuto extends FtcOpMode
         PurePursuitDrive,
         PidDrive,
         TimedDrive,
+        PedroPathDrive,
         DoNothing
     }   //enum AutoStrategy
 
@@ -152,6 +154,7 @@ public class FtcAuto extends FtcOpMode
             strategyMenu.addChoice("PurePursuit Drive", AutoStrategy.PurePursuitDrive, false, xTargetMenu);
             strategyMenu.addChoice("PID Drive", AutoStrategy.PidDrive, false, xTargetMenu);
             strategyMenu.addChoice("Timed Drive", AutoStrategy.TimedDrive, false, timedDrivePowerMenu);
+            strategyMenu.addChoice("Pedro Path Drive", AutoStrategy.PedroPathDrive, false, xTargetMenu);
             strategyMenu.addChoice("Do nothing", AutoStrategy.DoNothing, true);
 
             ppDrivePathMenu.addChoice("Path 1", PurePursuitDrivePath.Path1, true);
@@ -287,7 +290,7 @@ public class FtcAuto extends FtcOpMode
         switch (autoChoices.strategy)
         {
             case StartPosLeftAuto:
-                if (robot.robotBase != null)
+                if (robot.robotBase != null || robot.pedroSubsystem != null)
                 {
                     autoCommand = new CmdAuto(robot, autoChoices);
                 }
@@ -317,6 +320,13 @@ public class FtcAuto extends FtcOpMode
                     autoCommand = new CmdTimedDrive(
                         robot.robotBase.driveBase, autoChoices.startDelay, autoChoices.timedDriveTime, 0.0,
                         autoChoices.timedDrivePower, 0.0);
+                }
+                break;
+
+            case PedroPathDrive:
+                if (robot.pedroSubsystem != null)
+                {
+                    autoCommand = new CmdPedroPathDrive(robot.pedroSubsystem);
                 }
                 break;
 
@@ -419,6 +429,11 @@ public class FtcAuto extends FtcOpMode
                         autoChoices.xDriveDistance*12.0,
                         autoChoices.yDriveDistance*12.0,
                         autoChoices.turnAngle));
+            }
+            else if (autoChoices.strategy == AutoStrategy.PedroPathDrive)
+            {
+                ((CmdPedroPathDrive) autoCommand).startPath(
+                    autoChoices.xDriveDistance*12.0, autoChoices.yDriveDistance*12.0, autoChoices.turnAngle);
             }
 
             autoCommand.start();

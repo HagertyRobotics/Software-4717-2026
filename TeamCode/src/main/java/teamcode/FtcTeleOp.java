@@ -197,12 +197,19 @@ public class FtcTeleOp extends FtcOpMode
                 //
                 // DriveBase subsystem.
                 //
-                if (robot.robotBase != null)
+                if (robot.robotBase != null || robot.pedroSubsystem != null)
                 {
                     double[] inputs = driverGamepad.getDriveInputs(
                         Dashboard.SubsystemDrivebase.driveMode, true, drivePowerScale, turnPowerScale);
 
-                    robot.robotDriveBase.subsystemControl(driverAltFunc, inputs);
+                    if (robot.robotBase != null)
+                    {
+                        robot.robotDriveBase.subsystemControl(driverAltFunc, inputs);
+                    }
+                    else
+                    {
+                        robot.pedroSubsystem.subsystemControl(driverAltFunc, inputs);
+                    }
                     // Check for EndGame warning.
                     if (elapsedTime > RobotParams.Game.ENDGAME_THRESHOLD)
                     {

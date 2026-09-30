@@ -31,6 +31,11 @@ import trclib.timer.TrcTimer;
 
 /**
  * This class implements an autonomous strategy.
+ *
+ * When adding real season states here: if robot.pedroSubsystem is non-null, drive via Pedro Pathing by building
+ * a Path per state (see teamcode.autocommands.CmdPedroPathDrive for a worked example -- com.pedropathing.api.Paths
+ * .line()/curve(), robot.pedroSubsystem.followPath(path, event), then sm.waitForEvents(nextState, event)). There
+ * is no PathChain equivalent in the current Pedro Pathing API -- each path segment is just another state.
  */
 public class CmdAuto implements TrcRobot.RobotCommand
 {
